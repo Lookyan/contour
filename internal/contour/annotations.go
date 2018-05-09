@@ -29,7 +29,7 @@ const (
 
 	kubernetesIngressAllowHttp     = "kubernetes.io/ingress.allow-http"
 	kubernetesIngressForceSSL      = "ingress.kubernetes.io/force-ssl-redirect"
-	kubernetesIngressRewriteTarget = "ingress.kubernetes.io/rewrite-target"
+	kubernetesIngressRewriteTarget = "nginx.ingress.kubernetes.io/rewrite-target"
 
 	annotationRequestTimeout = "contour.heptio.com/request-timeout"
 	annotationRetryOn        = "contour.heptio.com/retry-on"

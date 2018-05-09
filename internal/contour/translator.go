@@ -56,6 +56,13 @@ type Translator struct {
 }
 
 func (t *Translator) OnAdd(obj interface{}) {
+	if _, ok := obj.(*v1.Service); ok {
+		objService := obj.(*v1.Service)
+		if objService.Spec.Type == v1.ServiceTypeExternalName {
+			fmt.Println("we don't need external services at all!")
+			return
+		}
+	}
 	t.cache.OnAdd(obj)
 	switch obj := obj.(type) {
 	case *v1.Service:
@@ -73,6 +80,13 @@ func (t *Translator) OnAdd(obj interface{}) {
 }
 
 func (t *Translator) OnUpdate(oldObj, newObj interface{}) {
+	if _, ok := newObj.(*v1.Service); ok {
+		objService := newObj.(*v1.Service)
+		if objService.Spec.Type == v1.ServiceTypeExternalName {
+			fmt.Println("we don't need external services at all!")
+			return
+		}
+	}
 	t.cache.OnUpdate(oldObj, newObj)
 	// TODO(dfc) need to inspect oldObj and remove unused parts of the config from the cache.
 	switch newObj := newObj.(type) {
@@ -106,6 +120,13 @@ func (t *Translator) OnUpdate(oldObj, newObj interface{}) {
 }
 
 func (t *Translator) OnDelete(obj interface{}) {
+	if _, ok := obj.(*v1.Service); ok {
+		objService := obj.(*v1.Service)
+		if objService.Spec.Type == v1.ServiceTypeExternalName {
+			fmt.Println("we don't need external services at all!")
+			return
+		}
+	}
 	t.cache.OnDelete(obj)
 	switch obj := obj.(type) {
 	case *v1.Service:
@@ -124,7 +145,35 @@ func (t *Translator) OnDelete(obj interface{}) {
 	}
 }
 
+func (t* Translator) checkIsServiceUsed(svc *v1.Service) bool {
+	used := false
+	for _, i := range t.cache.ingresses {
+		if i.Spec.Backend != nil  && i.Spec.Backend.ServiceName == svc.Name {
+			used = true
+			break
+		}
+
+		if i.Spec.Rules != nil {
+			for _, irule := range i.Spec.Rules {
+				for _, path := range irule.HTTP.Paths {
+					if path.Backend.ServiceName == svc.Name {
+						used = true
+						break
+					}
+				}
+			}
+		}
+	}
+
+	return used
+}
+
 func (t *Translator) addService(svc *v1.Service) {
+	if !t.checkIsServiceUsed(svc) {
+		fmt.Printf("Not used! %s", svc.Name)
+		fmt.Println()
+		return
+	}
 	t.recomputeService(nil, svc)
 }
 
@@ -133,6 +182,9 @@ func (t *Translator) updateService(oldsvc, newsvc *v1.Service) {
 }
 
 func (t *Translator) removeService(svc *v1.Service) {
+	if !t.checkIsServiceUsed(svc) {
+		return
+	}
 	t.recomputeService(svc, nil)
 }
 
@@ -162,6 +214,29 @@ func (t *Translator) ingressClass() string {
 	return DEFAULT_INGRESS_CLASS
 }
 
+func (t* Translator) recomputeServicesForIngress(i *v1beta1.Ingress) {
+	if i.Spec.Backend != nil {
+		svc, ok := t.cache.services[metadata{name: i.Spec.Backend.ServiceName, namespace: i.Namespace}]
+		if ok {
+			t.recomputeService(nil, svc)
+		}
+	}
+
+	if i.Spec.Rules != nil {
+		for m, irule := range i.Spec.Rules {
+			for k, path := range irule.HTTP.Paths {
+				if !strings.HasSuffix(path.Path, "/") {
+					i.Spec.Rules[m].HTTP.Paths[k].Path += "/"
+				}
+				svc, ok := t.cache.services[metadata{name: path.Backend.ServiceName, namespace: i.Namespace}]
+				if ok {
+					t.recomputeService(nil, svc)
+				}
+			}
+		}
+	}
+}
+
 func (t *Translator) addIngress(i *v1beta1.Ingress) {
 	class, ok := i.Annotations["kubernetes.io/ingress.class"]
 	if ok && class != t.ingressClass() {
@@ -172,6 +247,9 @@ func (t *Translator) addIngress(i *v1beta1.Ingress) {
 		// independent.
 		return
 	}
+
+	// we need to update service entities in case we got them before ingress resource
+	t.recomputeServicesForIngress(i)
 
 	t.recomputeListeners(t.cache.ingresses, t.cache.secrets)
 
