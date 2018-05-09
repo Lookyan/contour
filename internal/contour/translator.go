@@ -56,12 +56,8 @@ type Translator struct {
 }
 
 func (t *Translator) OnAdd(obj interface{}) {
-	if _, ok := obj.(*v1.Service); ok {
-		objService := obj.(*v1.Service)
-		if objService.Spec.Type == v1.ServiceTypeExternalName {
-			fmt.Println("we don't need external services at all!")
-			return
-		}
+	if t.isExternalService(obj) {
+		return
 	}
 	t.cache.OnAdd(obj)
 	switch obj := obj.(type) {
@@ -80,12 +76,8 @@ func (t *Translator) OnAdd(obj interface{}) {
 }
 
 func (t *Translator) OnUpdate(oldObj, newObj interface{}) {
-	if _, ok := newObj.(*v1.Service); ok {
-		objService := newObj.(*v1.Service)
-		if objService.Spec.Type == v1.ServiceTypeExternalName {
-			fmt.Println("we don't need external services at all!")
-			return
-		}
+	if t.isExternalService(newObj) {
+		return
 	}
 	t.cache.OnUpdate(oldObj, newObj)
 	// TODO(dfc) need to inspect oldObj and remove unused parts of the config from the cache.
@@ -120,12 +112,8 @@ func (t *Translator) OnUpdate(oldObj, newObj interface{}) {
 }
 
 func (t *Translator) OnDelete(obj interface{}) {
-	if _, ok := obj.(*v1.Service); ok {
-		objService := obj.(*v1.Service)
-		if objService.Spec.Type == v1.ServiceTypeExternalName {
-			fmt.Println("we don't need external services at all!")
-			return
-		}
+	if t.isExternalService(obj) {
+		return
 	}
 	t.cache.OnDelete(obj)
 	switch obj := obj.(type) {
@@ -143,6 +131,18 @@ func (t *Translator) OnDelete(obj interface{}) {
 	default:
 		t.Errorf("OnDelete unexpected type %T: %#v", obj, obj)
 	}
+}
+
+func (t* Translator) isExternalService(obj interface{}) bool {
+	if _, ok := obj.(*v1.Service); ok {
+		objService := obj.(*v1.Service)
+		if objService.Spec.Type == v1.ServiceTypeExternalName {
+			fmt.Println("we don't need external services at all!")
+			return true
+		}
+	}
+
+	return false
 }
 
 func (t* Translator) checkIsServiceUsed(svc *v1.Service) bool {
